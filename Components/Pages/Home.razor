@@ -1,0 +1,95 @@
+@page "/"
+@inject IEventService EventService
+@inject IDashboardService DashboardService
+@inject UserSessionState Session
+
+<PageTitle>EventEase - Discover &amp; Register for Events</PageTitle>
+
+<section class="hero">
+    <div class="hero-inner">
+        <span class="hero-tag">Event management made simple</span>
+        <h1>Discover events. Register in seconds. Track every attendee.</h1>
+        <p>EventEase brings event discovery, registration and attendance tracking together in one clean, fast application.</p>
+        <div class="button-row">
+            <a class="btn btn-light btn-lg" href="events">Browse Events</a>
+            <a class="btn btn-ghost-light btn-lg" href="create-event">Create an Event</a>
+        </div>
+
+        @if (_stats is not null)
+        {
+            <div class="hero-stats">
+                <div><strong>@_stats.TotalEvents</strong><span>Events</span></div>
+                <div><strong>@_stats.TotalRegistrations</strong><span>Registrations</span></div>
+                <div><strong>@_stats.UpcomingEvents</strong><span>Upcoming</span></div>
+            </div>
+        }
+    </div>
+</section>
+
+<section class="section">
+    <div class="section-header">
+        <h2>Upcoming highlights</h2>
+        <a href="events" class="link">View all events →</a>
+    </div>
+
+    @if (_loading)
+    {
+        <LoadingSpinner Text="Loading upcoming events..." />
+    }
+    else if (_error is not null)
+    {
+        <div class="alert alert-error" role="alert">@_error</div>
+    }
+    else if (_upcoming.Count == 0)
+    {
+        <EmptyState Icon="🗓️" Title="No upcoming events yet" Message="Be the first to create one!">
+            <a class="btn btn-primary" href="create-event">+ Create Event</a>
+        </EmptyState>
+    }
+    else
+    {
+        <div class="event-grid">
+            @foreach (var ev in _upcoming)
+            {
+                <EventCard EventItem="ev"
+                           IsSaved="Session.IsSaved(ev.Id)"
+                           IsSavedChanged="@(saved => Session.ToggleSaved(ev.Id, saved))"
+                           IsRegistered="Session.IsRegistered(ev.Id)" />
+            }
+        </div>
+    }
+</section>
+
+<section class="section">
+    <h2>Everything you need</h2>
+    <div class="feature-grid">
+        <div class="feature"><div class="feature-icon">🔎</div><h3>Search &amp; filter</h3><p>Find events by name, location or category in a click.</p></div>
+        <div class="feature"><div class="feature-icon">📝</div><h3>Safe registration</h3><p>Validation, duplicate prevention and capacity checks built in.</p></div>
+        <div class="feature"><div class="feature-icon">✅</div><h3>Attendance tracking</h3><p>Mark participants present or absent and see live percentages.</p></div>
+        <div class="feature"><div class="feature-icon">📊</div><h3>Live dashboard</h3><p>Totals, upcoming events and recent registrations at a glance.</p></div>
+    </div>
+</section>
+
+@code {
+    private bool _loading = true;
+    private string? _error;
+    private List<Event> _upcoming = new();
+    private DashboardStats? _stats;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _upcoming = await EventService.GetUpcomingAsync(3);
+            _stats = await DashboardService.GetStatsAsync();
+        }
+        catch (Exception)
+        {
+            _error = "We couldn't load events right now. Please refresh the page.";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+}

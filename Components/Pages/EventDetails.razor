@@ -1,0 +1,148 @@
+@page "/events/{Id:int}"
+@inject IEventService EventService
+@inject UserSessionState Session
+@inject NotificationService Notifications
+@inject NavigationManager Navigation
+
+<PageTitle>@(_event?.Name ?? "Event") - EventEase</PageTitle>
+
+@if (_loading)
+{
+    <LoadingSpinner Text="Loading event..." />
+}
+else if (_error is not null)
+{
+    <div class="alert alert-error" role="alert">@_error</div>
+}
+else if (_event is null)
+{
+    <EmptyState Icon="🕵️" Title="Event not found" Message="This event doesn't exist or has been deleted.">
+        <a class="btn btn-primary" href="events">Back to events</a>
+    </EmptyState>
+}
+else
+{
+    <a class="back-link" href="events">← Back to events</a>
+
+    <article class="details">
+        <div class="details-image">
+            <img src="@_event.ImageUrl" alt="@_event.Name" />
+            <span class="badge badge-category">@_event.Category</span>
+        </div>
+
+        <div class="details-body">
+            <h1>@_event.Name</h1>
+
+            <ul class="event-meta large">
+                <li><span aria-hidden="true">📅</span> @_event.EventDate.ToString("dddd, dd MMMM yyyy")</li>
+                <li><span aria-hidden="true">🕒</span> Starts at @_event.StartTime.ToString("hh:mm tt")</li>
+                <li><span aria-hidden="true">📍</span> @_event.Location</li>
+            </ul>
+
+            <h2>About this event</h2>
+            <p class="description">@_event.Description</p>
+
+            <div class="seats">
+                <div class="seats-text">
+                    <strong>@_event.RegisteredCount registered</strong>
+                    <span class="muted">@_event.AvailableSeats of @_event.MaxCapacity seats available</span>
+                </div>
+                <div class="progress"><div class="progress-bar @(_event.IsFull ? "seats-full" : "seats-ok")" style="width:@(FilledPercent)%"></div></div>
+            </div>
+
+            <div class="button-row">
+                @if (!_event.IsUpcoming)
+                {
+                    <span class="btn btn-disabled">Event Ended</span>
+                }
+                else if (_event.IsFull)
+                {
+                    <span class="btn btn-disabled">Sold Out</span>
+                }
+                else if (Session.IsRegistered(_event.Id))
+                {
+                    <a class="btn btn-success" href="my-registrations">✓ You're registered - manage</a>
+                }
+                else
+                {
+                    <a class="btn btn-primary btn-lg" href="register/@_event.Id">Register Now</a>
+                }
+                <a class="btn btn-outline" href="edit-event/@_event.Id">✏️ Edit</a>
+                <button type="button" class="btn btn-danger-outline" @onclick="() => _showDelete = true">🗑 Delete</button>
+            </div>
+        </div>
+    </article>
+}
+
+@if (_showDelete && _event is not null)
+{
+    <div class="modal-backdrop" @onclick="() => _showDelete = false">
+        <div class="modal" role="dialog" aria-modal="true" aria-labelledby="del-title" @onclick:stopPropagation="true">
+            <h3 id="del-title">Delete this event?</h3>
+            <p>
+                This will permanently delete <strong>@_event.Name</strong>
+                and its @_event.RegisteredCount registration@(_event.RegisteredCount == 1 ? "" : "s"). This cannot be undone.
+            </p>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-outline" @onclick="() => _showDelete = false">Cancel</button>
+                <button type="button" class="btn btn-danger" disabled="@_deleting" @onclick="DeleteAsync">
+                    @(_deleting ? "Deleting..." : "Yes, delete")
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public int Id { get; set; }
+
+    private Event? _event;
+    private bool _loading = true;
+    private bool _showDelete;
+    private bool _deleting;
+    private string? _error;
+
+    private int FilledPercent => _event is null || _event.MaxCapacity <= 0 ? 0
+        : (int)Math.Round(_event.RegisteredCount * 100.0 / _event.MaxCapacity);
+
+    // Runs on first load AND whenever {Id} changes (e.g. navigating /events/1 -> /events/2).
+    protected override async Task OnParametersSetAsync()
+    {
+        _loading = true;
+        _error = null;
+        _showDelete = false;
+        try
+        {
+            _event = await EventService.GetByIdAsync(Id);
+        }
+        catch (Exception)
+        {
+            _error = "We couldn't load this event. Please try again.";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task DeleteAsync()
+    {
+        if (_event is null) return;
+        _deleting = true;
+        var result = await EventService.DeleteAsync(_event.Id);
+        _deleting = false;
+
+        if (result.Success)
+        {
+            Session.RemoveRegistration(_event.Id);
+            Session.ToggleSaved(_event.Id, false);
+            Notifications.Success($"\"{_event.Name}\" was deleted.");
+            Navigation.NavigateTo("events");
+        }
+        else
+        {
+            _showDelete = false;
+            Notifications.Error(result.Message);
+        }
+    }
+}

@@ -1,0 +1,36 @@
+## .NET build output
+bin/
+obj/
+publish/
+*.dll
+*.pdb
+
+## IDE files
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+*.userprefs
+
+## Local database files (never commit data)
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+
+## Secrets and local settings
+secrets.json
+appsettings.Production.json
+appsettings.Local.json
+.env
+*.pfx
+
+## OS files
+.DS_Store
+Thumbs.db
+
+## Logs
+*.log
+logs/

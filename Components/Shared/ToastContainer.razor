@@ -1,0 +1,30 @@
+@implements IDisposable
+@inject NotificationService Notifications
+
+<div class="toast-container" aria-live="polite">
+    @foreach (var toast in Notifications.Toasts)
+    {
+        <div class="toast toast-@toast.Type.ToString().ToLowerInvariant()" role="status">
+            <span class="toast-icon" aria-hidden="true">@Icon(toast.Type)</span>
+            <span class="toast-message">@toast.Message</span>
+            <button type="button" class="toast-close" aria-label="Dismiss notification"
+                    @onclick="() => Notifications.Dismiss(toast.Id)">×</button>
+        </div>
+    }
+</div>
+
+@code {
+    protected override void OnInitialized() => Notifications.OnChange += Refresh;
+
+    private void Refresh() => _ = InvokeAsync(StateHasChanged);
+
+    private static string Icon(ToastType type) => type switch
+    {
+        ToastType.Success => "✓",
+        ToastType.Error => "!",
+        ToastType.Warning => "⚠",
+        _ => "i"
+    };
+
+    public void Dispose() => Notifications.OnChange -= Refresh;
+}

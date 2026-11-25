@@ -1,0 +1,76 @@
+@page "/edit-event/{Id:int}"
+@inject IEventService EventService
+@inject NavigationManager Navigation
+@inject NotificationService Notifications
+
+<PageTitle>Edit Event - EventEase</PageTitle>
+
+@if (_loading)
+{
+    <LoadingSpinner Text="Loading event..." />
+}
+else if (_model is null)
+{
+    <EmptyState Icon="🕵️" Title="Event not found" Message="This event doesn't exist or has been deleted.">
+        <a class="btn btn-primary" href="events">Back to events</a>
+    </EmptyState>
+}
+else
+{
+    <div class="page-header">
+        <div>
+            <h1>Edit Event</h1>
+            <p class="muted">Update the details of <strong>@_model.Name</strong>.</p>
+        </div>
+    </div>
+
+    <EventEditor Model="_model" OnSubmit="SaveAsync" IsSaving="_saving"
+                 SubmitText="Save Changes" ErrorMessage="_error" CancelHref="@($"events/{Id}")" />
+}
+
+@code {
+    [Parameter] public int Id { get; set; }
+
+    private Event? _model;
+    private bool _loading = true;
+    private bool _saving;
+    private string? _error;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _loading = true;
+        try
+        {
+            _model = await EventService.GetByIdAsync(Id);
+        }
+        catch (Exception)
+        {
+            _model = null;
+            _error = "We couldn't load this event.";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_model is null) return;
+        _saving = true;
+        _error = null;
+
+        var result = await EventService.UpdateAsync(_model);
+        _saving = false;
+
+        if (result.Success)
+        {
+            Notifications.Success(result.Message);
+            Navigation.NavigateTo($"events/{Id}");
+        }
+        else
+        {
+            _error = result.Message;
+        }
+    }
+}

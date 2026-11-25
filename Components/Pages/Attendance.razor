@@ -1,0 +1,189 @@
+@page "/attendance"
+@inject IEventService EventService
+@inject IRegistrationService RegistrationService
+@inject NotificationService Notifications
+
+<PageTitle>Attendance - EventEase</PageTitle>
+
+<div class="page-header">
+    <div>
+        <h1>Attendance Tracker</h1>
+        <p class="muted">Mark participants as present or absent and monitor attendance.</p>
+    </div>
+    <div class="filter-inline">
+        <label for="att-event" class="sr-only">Filter by event</label>
+        <select id="att-event" class="form-control" @bind="_eventId" @bind:after="OnEventChangedAsync">
+            <option value="0">All events</option>
+            @foreach (var ev in _events)
+            {
+                <option value="@ev.Id">@ev.Name</option>
+            }
+        </select>
+    </div>
+</div>
+
+@if (_loading)
+{
+    <LoadingSpinner Text="Loading attendance records..." />
+}
+else if (_error is not null)
+{
+    <div class="alert alert-error" role="alert">
+        @_error
+        <button type="button" class="btn btn-sm btn-outline" @onclick="LoadAllAsync">Try again</button>
+    </div>
+}
+else
+{
+    <div class="stat-grid">
+        <div class="stat-card"><span class="stat-label">Registered</span><strong class="stat-value">@_summary.Total</strong></div>
+        <div class="stat-card stat-success"><span class="stat-label">Present</span><strong class="stat-value">@_summary.Present</strong></div>
+        <div class="stat-card stat-danger"><span class="stat-label">Absent</span><strong class="stat-value">@_summary.Absent</strong></div>
+        <div class="stat-card stat-warning"><span class="stat-label">Not marked</span><strong class="stat-value">@_summary.Pending</strong></div>
+        <div class="stat-card stat-primary">
+            <span class="stat-label">Attendance rate</span>
+            <strong class="stat-value">@($"{_summary.Rate:0.#}%")</strong>
+            <div class="progress"><div class="progress-bar seats-ok" style="width:@((int)Math.Round(_summary.Rate))%"></div></div>
+        </div>
+    </div>
+
+    @if (_page is null || _page.TotalCount == 0)
+    {
+        <EmptyState Icon="👥" Title="No registrations yet" Message="Participants will appear here once they register for an event.">
+            <a class="btn btn-primary" href="events">Browse events</a>
+        </EmptyState>
+    }
+    else
+    {
+        <div class="card table-card">
+            <div class="table-wrap">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Participant</th>
+                            <th>Email</th>
+                            <th>Event</th>
+                            <th>Status</th>
+                            <th class="text-right">Mark attendance</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var reg in _page.Items)
+                        {
+                            <tr @key="reg.Id">
+                                <td data-label="Participant"><strong>@reg.FullName</strong></td>
+                                <td data-label="Email">@reg.Email</td>
+                                <td data-label="Event">@(reg.Event?.Name ?? "-")</td>
+                                <td data-label="Status"><span class="badge @StatusBadge(reg.Attendance)">@reg.Attendance</span></td>
+                                <td data-label="Mark attendance" class="text-right">
+                                    <div class="btn-group">
+                                        <button type="button" class="btn btn-sm @(reg.Attendance == AttendanceStatus.Present ? "btn-success" : "btn-success-outline")"
+                                                disabled="@(_busyId == reg.Id)" @onclick="() => SetAsync(reg, AttendanceStatus.Present)">Present</button>
+                                        <button type="button" class="btn btn-sm @(reg.Attendance == AttendanceStatus.Absent ? "btn-danger" : "btn-danger-outline")"
+                                                disabled="@(_busyId == reg.Id)" @onclick="() => SetAsync(reg, AttendanceStatus.Absent)">Absent</button>
+                                        @if (reg.Attendance != AttendanceStatus.Pending)
+                                        {
+                                            <button type="button" class="btn btn-sm btn-ghost" title="Reset to not marked"
+                                                    disabled="@(_busyId == reg.Id)" @onclick="() => SetAsync(reg, AttendanceStatus.Pending)">Reset</button>
+                                        }
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <Pagination CurrentPage="_currentPage" TotalPages="_page.TotalPages" OnPageChanged="GoToPageAsync" />
+    }
+}
+
+@code {
+    private const int PageSize = 10;
+
+    private List<Event> _events = new();
+    private PagedResult<Registration>? _page;
+    private AttendanceSummary _summary = AttendanceSummary.Empty;
+    private int _eventId;
+    private int _currentPage = 1;
+    private int _busyId;
+    private bool _loading = true;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _events = await EventService.GetAllAsync();
+        }
+        catch (Exception)
+        {
+            _error = "We couldn't load the events list.";
+        }
+        await LoadAllAsync();
+    }
+
+    private async Task LoadAllAsync()
+    {
+        _error = null;
+        try
+        {
+            _page = await RegistrationService.GetForAttendanceAsync(_eventId, _currentPage, PageSize);
+            _summary = await RegistrationService.GetAttendanceSummaryAsync(_eventId);
+        }
+        catch (Exception)
+        {
+            _error = "We couldn't load attendance records. Please try again.";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task OnEventChangedAsync()
+    {
+        _currentPage = 1;
+        await LoadAllAsync();
+    }
+
+    private async Task GoToPageAsync(int page)
+    {
+        _currentPage = page;
+        await LoadAllAsync();
+    }
+
+    private async Task SetAsync(Registration reg, AttendanceStatus status)
+    {
+        if (reg.Attendance == status) return;
+
+        _busyId = reg.Id;
+        var result = await RegistrationService.SetAttendanceAsync(reg.Id, status);
+        _busyId = 0;
+
+        if (!result.Success)
+        {
+            Notifications.Error(result.Message);
+            return;
+        }
+
+        // Update the row in memory (no need to reload the whole table), then refresh the totals.
+        reg.Attendance = status;
+        try
+        {
+            _summary = await RegistrationService.GetAttendanceSummaryAsync(_eventId);
+        }
+        catch (Exception)
+        {
+            Notifications.Error("Saved, but we couldn't refresh the totals.");
+        }
+    }
+
+    private static string StatusBadge(AttendanceStatus status) => status switch
+    {
+        AttendanceStatus.Present => "badge-success",
+        AttendanceStatus.Absent => "badge-danger",
+        _ => "badge-neutral"
+    };
+}

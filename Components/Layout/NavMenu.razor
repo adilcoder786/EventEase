@@ -1,0 +1,67 @@
+@implements IDisposable
+@inject UserSessionState Session
+@inject NavigationManager Navigation
+
+<header class="navbar">
+    <div class="navbar-inner">
+        <a class="brand" href="/">🎟️ <span>EventEase</span></a>
+
+        <button class="nav-toggle" type="button" @onclick="Toggle"
+                aria-label="Toggle navigation menu" aria-expanded="@_open.ToString().ToLowerInvariant()">
+            @(_open ? "✕" : "☰")
+        </button>
+
+        <nav class="nav-links @(_open ? "open" : "")" aria-label="Main navigation">
+            <NavLink class="nav-link" href="" Match="NavLinkMatch.All">Home</NavLink>
+            <NavLink class="nav-link" href="events">Events</NavLink>
+            <NavLink class="nav-link" href="dashboard">Dashboard</NavLink>
+            <NavLink class="nav-link" href="attendance">Attendance</NavLink>
+            <NavLink class="nav-link" href="my-registrations">My Registrations</NavLink>
+
+            <div class="nav-actions">
+                @if (Session.SavedCount > 0)
+                {
+                    <a class="nav-chip" href="events" title="Events you saved this session">♥ @Session.SavedCount saved</a>
+                }
+                @if (Session.HasProfile)
+                {
+                    <span class="nav-chip nav-user" title="@Session.Email">
+                        👤 @FirstName
+                        <button type="button" class="chip-close" @onclick="Session.ClearProfile"
+                                aria-label="Clear my session details" title="Clear my session details">×</button>
+                    </span>
+                }
+                <a class="btn btn-primary btn-sm" href="create-event">+ Create Event</a>
+            </div>
+        </nav>
+    </div>
+</header>
+
+@code {
+    private bool _open;
+
+    private string FirstName => Session.FullName.Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? "Guest";
+
+    private void Toggle() => _open = !_open;
+
+    protected override void OnInitialized()
+    {
+        Session.OnChange += OnSessionChanged;
+        Navigation.LocationChanged += OnLocationChanged;
+    }
+
+    private void OnSessionChanged() => _ = InvokeAsync(StateHasChanged);
+
+    // Close the mobile menu after navigating.
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
+    {
+        _open = false;
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose()
+    {
+        Session.OnChange -= OnSessionChanged;
+        Navigation.LocationChanged -= OnLocationChanged;
+    }
+}

@@ -1,0 +1,173 @@
+@page "/my-registrations"
+@using System.ComponentModel.DataAnnotations
+@inject IRegistrationService RegistrationService
+@inject UserSessionState Session
+@inject NotificationService Notifications
+
+<PageTitle>My Registrations - EventEase</PageTitle>
+
+<div class="page-header">
+    <div>
+        <h1>My Registrations</h1>
+        <p class="muted">Look up your registrations with the email address you used and cancel if your plans change.</p>
+    </div>
+</div>
+
+<div class="card form-card narrow">
+    <div class="form-group">
+        <label for="lookup-email">Email address</label>
+        <div class="input-row">
+            <input id="lookup-email" type="email" class="form-control" placeholder="you@example.com"
+                   @bind="_email" @bind:event="oninput" @onkeydown="OnKeyDownAsync" />
+            <button type="button" class="btn btn-primary" disabled="@_loading" @onclick="SearchAsync">
+                @(_loading ? "Searching..." : "Find")
+            </button>
+        </div>
+        @if (_validationError is not null)
+        {
+            <div class="validation-message">@_validationError</div>
+        }
+    </div>
+</div>
+
+@if (_loading)
+{
+    <LoadingSpinner Text="Looking up registrations..." />
+}
+else if (_error is not null)
+{
+    <div class="alert alert-error" role="alert">@_error</div>
+}
+else if (_registrations is not null)
+{
+    @if (_registrations.Count == 0)
+    {
+        <EmptyState Icon="🎫" Title="No registrations found" Message="We couldn't find any registrations for this email address.">
+            <a class="btn btn-primary" href="events">Browse events</a>
+        </EmptyState>
+    }
+    else
+    {
+        <div class="reg-list">
+            @foreach (var reg in _registrations)
+            {
+                <div class="card reg-item" @key="reg.Id">
+                    <div class="reg-main">
+                        <h3><a href="events/@reg.EventId">@(reg.Event?.Name ?? "Event")</a></h3>
+                        <ul class="event-meta">
+                            @if (reg.Event is not null)
+                            {
+                                <li><span aria-hidden="true">📅</span> @reg.Event.EventDate.ToString("ddd, dd MMM yyyy") at @reg.Event.StartTime.ToString("hh:mm tt")</li>
+                                <li><span aria-hidden="true">📍</span> @reg.Event.Location</li>
+                            }
+                            <li><span aria-hidden="true">📝</span> Registered on @reg.RegistrationDate.ToString("dd MMM yyyy, hh:mm tt")</li>
+                        </ul>
+                    </div>
+                    <div class="reg-side">
+                        <span class="badge @StatusBadge(reg.Attendance)">@reg.Attendance</span>
+                        @if (reg.Event is { IsUpcoming: true })
+                        {
+                            @if (_confirmId == reg.Id)
+                            {
+                                <div class="confirm-inline">
+                                    <span>Cancel this registration?</span>
+                                    <button type="button" class="btn btn-sm btn-danger" disabled="@_cancelling" @onclick="() => CancelAsync(reg)">Yes</button>
+                                    <button type="button" class="btn btn-sm btn-outline" @onclick="() => _confirmId = null">No</button>
+                                </div>
+                            }
+                            else
+                            {
+                                <button type="button" class="btn btn-sm btn-danger-outline" @onclick="() => _confirmId = reg.Id">Cancel registration</button>
+                            }
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    }
+}
+
+@code {
+    private string _email = string.Empty;
+    private string? _validationError;
+    private string? _error;
+    private bool _loading;
+    private bool _cancelling;
+    private int? _confirmId;
+    private List<Registration>? _registrations;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // If the visitor registered earlier in this session, look them up automatically.
+        if (Session.HasProfile)
+        {
+            _email = Session.Email;
+            await SearchAsync();
+        }
+    }
+
+    private async Task OnKeyDownAsync(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await SearchAsync();
+    }
+
+    private async Task SearchAsync()
+    {
+        _validationError = null;
+        _error = null;
+        _confirmId = null;
+
+        if (string.IsNullOrWhiteSpace(_email))
+        {
+            _validationError = "Please enter your email address.";
+            return;
+        }
+        if (!new EmailAddressAttribute().IsValid(_email.Trim()))
+        {
+            _validationError = "Please enter a valid email address.";
+            return;
+        }
+
+        _loading = true;
+        try
+        {
+            _registrations = await RegistrationService.GetByEmailAsync(_email);
+            Session.Touch();
+        }
+        catch (Exception)
+        {
+            _registrations = null;
+            _error = "We couldn't load your registrations. Please try again.";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task CancelAsync(Registration reg)
+    {
+        _cancelling = true;
+        var result = await RegistrationService.CancelAsync(reg.Id, reg.Email);
+        _cancelling = false;
+        _confirmId = null;
+
+        if (result.Success)
+        {
+            _registrations?.RemoveAll(r => r.Id == reg.Id);
+            Session.RemoveRegistration(reg.EventId);
+            Notifications.Success(result.Message);
+        }
+        else
+        {
+            Notifications.Error(result.Message);
+        }
+    }
+
+    private static string StatusBadge(AttendanceStatus status) => status switch
+    {
+        AttendanceStatus.Present => "badge-success",
+        AttendanceStatus.Absent => "badge-danger",
+        _ => "badge-neutral"
+    };
+}

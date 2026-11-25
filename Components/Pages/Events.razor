@@ -1,0 +1,178 @@
+@page "/events"
+@implements IDisposable
+@inject IEventService EventService
+@inject UserSessionState Session
+
+<PageTitle>Events - EventEase</PageTitle>
+
+<div class="page-header">
+    <div>
+        <h1>Browse Events</h1>
+        <p class="muted">Search, filter and register for upcoming events.</p>
+    </div>
+    <a class="btn btn-primary" href="create-event">+ Create Event</a>
+</div>
+
+<div class="filter-bar">
+    @* @bind with oninput updates _searchText on every keystroke; @bind:after reloads (debounced). *@
+    <input class="form-control" type="search" placeholder="Search by name, location or description..."
+           aria-label="Search events"
+           @bind="_searchText" @bind:event="oninput" @bind:after="OnSearchChangedAsync" />
+
+    <select class="form-control" aria-label="Filter by category" @bind="_category" @bind:after="OnFilterChangedAsync">
+        <option value="">All categories</option>
+        @foreach (var category in EventCatalog.Categories)
+        {
+            <option value="@category">@category</option>
+        }
+    </select>
+
+    <label class="check">
+        <input type="checkbox" @bind="_upcomingOnly" @bind:after="OnFilterChangedAsync" /> Upcoming only
+    </label>
+
+    @if (HasFilters)
+    {
+        <button type="button" class="btn btn-ghost" @onclick="ClearFiltersAsync">Clear filters</button>
+    }
+</div>
+
+@if (_result is null && _error is null)
+{
+    <LoadingSpinner Text="Loading events..." />
+}
+else if (_error is not null)
+{
+    <div class="alert alert-error" role="alert">
+        @_error
+        <button type="button" class="btn btn-sm btn-outline" @onclick="LoadAsync">Try again</button>
+    </div>
+}
+else if (_result!.TotalCount == 0)
+{
+    <EmptyState Icon="🔍" Title="No events found"
+                Message="@(HasFilters ? "Try changing or clearing your search and filters." : "There are no events yet. Create the first one!")">
+        @if (HasFilters)
+        {
+            <button type="button" class="btn btn-outline" @onclick="ClearFiltersAsync">Clear filters</button>
+        }
+        else
+        {
+            <a class="btn btn-primary" href="create-event">+ Create Event</a>
+        }
+    </EmptyState>
+}
+else
+{
+    <p class="result-count muted">
+        Showing @_result.Items.Count of @_result.TotalCount event@(_result.TotalCount == 1 ? "" : "s")
+        @if (Session.SavedCount > 0)
+        {
+            <span> · ♥ @Session.SavedCount saved</span>
+        }
+    </p>
+
+    <div class="event-grid @(_refreshing ? "is-refreshing" : "")">
+        @foreach (var ev in _result.Items)
+        {
+            <EventCard @key="ev.Id" EventItem="ev"
+                       IsSaved="Session.IsSaved(ev.Id)"
+                       IsSavedChanged="@(saved => Session.ToggleSaved(ev.Id, saved))"
+                       IsRegistered="Session.IsRegistered(ev.Id)" />
+        }
+    </div>
+
+    <Pagination CurrentPage="_page" TotalPages="_result.TotalPages" OnPageChanged="GoToPageAsync" />
+}
+
+@code {
+    private const int PageSize = 6;
+
+    private string _searchText = string.Empty;
+    private string _category = string.Empty;
+    private bool _upcomingOnly;
+    private int _page = 1;
+
+    private PagedResult<Event>? _result;
+    private string? _error;
+    private bool _refreshing;
+    private CancellationTokenSource? _debounce;
+
+    private bool HasFilters => !string.IsNullOrWhiteSpace(_searchText) || !string.IsNullOrEmpty(_category) || _upcomingOnly;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _error = null;
+        _refreshing = _result is not null;
+        try
+        {
+            var query = new EventQuery(_searchText, _category, _upcomingOnly, _page, PageSize);
+            var result = await EventService.GetEventsAsync(query);
+
+            // If the current page no longer exists (e.g. after filtering), go to the last page.
+            if (result.TotalPages > 0 && _page > result.TotalPages)
+            {
+                _page = result.TotalPages;
+                result = await EventService.GetEventsAsync(query with { Page = _page });
+            }
+            _result = result;
+        }
+        catch (Exception)
+        {
+            _error = "We couldn't load events. Please check your connection and try again.";
+        }
+        finally
+        {
+            _refreshing = false;
+        }
+    }
+
+    // Wait 300 ms after the last keystroke so we don't query the database for every letter.
+    private async Task OnSearchChangedAsync()
+    {
+        _debounce?.Cancel();
+        _debounce?.Dispose();
+        _debounce = new CancellationTokenSource();
+        var token = _debounce.Token;
+
+        try
+        {
+            await Task.Delay(300, token);
+            _page = 1;
+            await LoadAsync();
+        }
+        catch (TaskCanceledException)
+        {
+            // A newer keystroke replaced this one - nothing to do.
+        }
+    }
+
+    private async Task OnFilterChangedAsync()
+    {
+        _page = 1;
+        await LoadAsync();
+    }
+
+    private async Task ClearFiltersAsync()
+    {
+        _searchText = string.Empty;
+        _category = string.Empty;
+        _upcomingOnly = false;
+        _page = 1;
+        await LoadAsync();
+    }
+
+    private async Task GoToPageAsync(int page)
+    {
+        _page = page;
+        await LoadAsync();
+    }
+
+    public void Dispose()
+    {
+        _debounce?.Cancel();
+        _debounce?.Dispose();
+    }
+}

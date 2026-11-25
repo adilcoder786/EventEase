@@ -1,0 +1,241 @@
+@page "/register"
+@page "/register/{EventId:int?}"
+@inject IEventService EventService
+@inject IRegistrationService RegistrationService
+@inject UserSessionState Session
+@inject NotificationService Notifications
+
+<PageTitle>Register - EventEase</PageTitle>
+
+<div class="page-header">
+    <div>
+        <h1>Register for an Event</h1>
+        <p class="muted">Reserve your seat in under a minute.</p>
+    </div>
+</div>
+
+@if (_loading)
+{
+    <LoadingSpinner Text="Loading events..." />
+}
+else if (_loadError is not null)
+{
+    <div class="alert alert-error" role="alert">@_loadError</div>
+}
+else if (_success is not null)
+{
+    <div class="card success-card">
+        <div class="success-icon">🎉</div>
+        <h2>You're registered!</h2>
+        <p>
+            <strong>@_success.FullName</strong>, your seat for <strong>@SuccessEventName</strong> is confirmed.
+            We've saved your details for this session so the next registration is even faster.
+        </p>
+        <div class="button-row center">
+            <a class="btn btn-primary" href="my-registrations">View my registrations</a>
+            <a class="btn btn-outline" href="events">Browse more events</a>
+            <button type="button" class="btn btn-ghost" @onclick="RegisterAnother">Register for another event</button>
+        </div>
+    </div>
+}
+else
+{
+    @if (_notice is not null)
+    {
+        <div class="alert alert-warning" role="alert">@_notice</div>
+    }
+
+    @if (_events.Count == 0)
+    {
+        <EmptyState Icon="🗓️" Title="No events open for registration" Message="There are no upcoming events right now.">
+            <a class="btn btn-primary" href="create-event">+ Create Event</a>
+        </EmptyState>
+    }
+    else
+    {
+        <div class="form-layout">
+            <EditForm Model="_model" OnValidSubmit="SubmitAsync" class="card form-card">
+                <DataAnnotationsValidator />
+                <ValidationSummary />
+
+                @if (_error is not null)
+                {
+                    <div class="alert alert-error" role="alert">@_error</div>
+                }
+
+                <div class="form-group">
+                    <label for="reg-name">Full name</label>
+                    <InputText id="reg-name" class="form-control" @bind-Value="_model.FullName" placeholder="Your full name" autocomplete="name" />
+                    <ValidationMessage For="() => _model.FullName" />
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="reg-email">Email address</label>
+                        <InputText id="reg-email" type="email" class="form-control" @bind-Value="_model.Email" placeholder="you@example.com" autocomplete="email" />
+                        <ValidationMessage For="() => _model.Email" />
+                    </div>
+                    <div class="form-group">
+                        <label for="reg-phone">Phone number</label>
+                        <InputText id="reg-phone" type="tel" class="form-control" @bind-Value="_model.PhoneNumber" placeholder="+91 98765 43210" autocomplete="tel" />
+                        <ValidationMessage For="() => _model.PhoneNumber" />
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="reg-event">Selected event</label>
+                    <InputSelect id="reg-event" class="form-control" @bind-Value="_model.EventId">
+                        <option value="0">-- Select an event --</option>
+                        @foreach (var ev in _events)
+                        {
+                            <option value="@ev.Id" disabled="@ev.IsFull">
+                                @ev.Name - @ev.EventDate.ToString("dd MMM yyyy")@(ev.IsFull ? " (Full)" : "")
+                            </option>
+                        }
+                    </InputSelect>
+                    <ValidationMessage For="() => _model.EventId" />
+                </div>
+
+                <div class="form-group">
+                    <label for="reg-date">Registration date</label>
+                    <input id="reg-date" class="form-control" value="@_model.RegistrationDate.ToString("dd MMM yyyy, hh:mm tt")" readonly />
+                    <small class="hint">Set automatically when you submit.</small>
+                </div>
+
+                <div class="form-actions">
+                    <a class="btn btn-outline" href="events">Cancel</a>
+                    <button type="submit" class="btn btn-primary" disabled="@_submitting">
+                        @(_submitting ? "Registering..." : "Complete Registration")
+                    </button>
+                </div>
+            </EditForm>
+
+            <aside class="card summary-card">
+                <h3>Event summary</h3>
+                @if (SelectedEvent is null)
+                {
+                    <p class="muted">Select an event to see its details here.</p>
+                }
+                else
+                {
+                    <img src="@SelectedEvent.ImageUrl" alt="@SelectedEvent.Name" />
+                    <h4>@SelectedEvent.Name</h4>
+                    <ul class="event-meta">
+                        <li><span aria-hidden="true">📅</span> @SelectedEvent.EventDate.ToString("ddd, dd MMM yyyy")</li>
+                        <li><span aria-hidden="true">🕒</span> @SelectedEvent.StartTime.ToString("hh:mm tt")</li>
+                        <li><span aria-hidden="true">📍</span> @SelectedEvent.Location</li>
+                    </ul>
+                    <div class="seats">
+                        <div class="seats-text">
+                            <span class="seats-label @(SelectedEvent.IsFull ? "seats-full" : "seats-ok")">@SelectedEvent.AvailableSeats seats left</span>
+                            <span class="muted">of @SelectedEvent.MaxCapacity</span>
+                        </div>
+                        <div class="progress"><div class="progress-bar @(SelectedEvent.IsFull ? "seats-full" : "seats-ok")" style="width:@(SelectedPercent)%"></div></div>
+                    </div>
+                }
+            </aside>
+        </div>
+    }
+}
+
+@code {
+    /// <summary>Optional: pre-selects the event from the URL /register/{eventId}.</summary>
+    [Parameter] public int? EventId { get; set; }
+
+    private readonly Registration _model = new();
+    private List<Event> _events = new();
+    private Registration? _success;
+    private string? _loadError;
+    private string? _error;
+    private string? _notice;
+    private bool _loading = true;
+    private bool _submitting;
+
+    private Event? SelectedEvent => _events.FirstOrDefault(e => e.Id == _model.EventId);
+
+    private string SuccessEventName => _events.FirstOrDefault(e => e.Id == _success?.EventId)?.Name ?? "the event";
+
+    private int SelectedPercent => SelectedEvent is null || SelectedEvent.MaxCapacity <= 0 ? 0
+        : (int)Math.Round(SelectedEvent.RegisteredCount * 100.0 / SelectedEvent.MaxCapacity);
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _loading = true;
+        _loadError = null;
+        _notice = null;
+        try
+        {
+            // Pre-fill from the current session (state management).
+            if (string.IsNullOrWhiteSpace(_model.Email) && Session.HasProfile)
+            {
+                _model.FullName = Session.FullName;
+                _model.Email = Session.Email;
+                _model.PhoneNumber = Session.PhoneNumber;
+            }
+
+            await LoadEventsAsync();
+
+            if (EventId is > 0)
+            {
+                if (_events.Any(e => e.Id == EventId))
+                {
+                    _model.EventId = EventId.Value;
+                }
+                else
+                {
+                    var ev = await EventService.GetByIdAsync(EventId.Value);
+                    _notice = ev is null
+                        ? $"Event #{EventId} was not found. Please choose another event."
+                        : "This event has already taken place. Please choose an upcoming event.";
+                    _model.EventId = 0;
+                }
+            }
+        }
+        catch (Exception)
+        {
+            _loadError = "We couldn't load the events. Please refresh the page.";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task LoadEventsAsync()
+    {
+        var all = await EventService.GetAllAsync();
+        _events = all.Where(e => e.IsUpcoming).ToList();
+    }
+
+    private async Task SubmitAsync()
+    {
+        _submitting = true;
+        _error = null;
+        _model.RegistrationDate = DateTime.Now;
+
+        var result = await RegistrationService.RegisterAsync(_model);
+        _submitting = false;
+
+        if (result.Success && result.Data is not null)
+        {
+            _success = result.Data;
+            Session.SetProfile(_model.FullName, _model.Email, _model.PhoneNumber);
+            Session.AddRegistration(result.Data.EventId);
+            Notifications.Success(result.Message);
+        }
+        else
+        {
+            _error = result.Message;
+            Notifications.Error(result.Message);
+            try { await LoadEventsAsync(); } catch { /* keep the old list if refresh fails */ }
+        }
+    }
+
+    private void RegisterAnother()
+    {
+        _success = null;
+        _error = null;
+        _model.EventId = 0;
+        _model.RegistrationDate = DateTime.Now;
+    }
+}

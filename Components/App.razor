@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="EventEase - discover, register for and manage events." />
+    <base href="/" />
+    <link rel="stylesheet" href="css/app.css" />
+    <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+    <HeadOutlet @rendermode="InteractiveNoPrerender" />
+</head>
+
+<body>
+    <Routes @rendermode="InteractiveNoPrerender" />
+    <script src="_framework/blazor.web.js"></script>
+</body>
+
+</html>
+
+@code {
+    // prerender: false -> pages load their data only once (no duplicate database calls)
+    // and session state is never lost between "prerender" and "interactive" phases.
+    private static readonly IComponentRenderMode InteractiveNoPrerender =
+        new InteractiveServerRenderMode(prerender: false);
+}

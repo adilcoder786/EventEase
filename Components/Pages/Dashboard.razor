@@ -1,0 +1,150 @@
+@page "/dashboard"
+@inject IDashboardService DashboardService
+
+<PageTitle>Dashboard - EventEase</PageTitle>
+
+<div class="page-header">
+    <div>
+        <h1>Dashboard</h1>
+        <p class="muted">A live overview of your events, registrations and attendance.</p>
+    </div>
+    <button type="button" class="btn btn-outline" @onclick="LoadAsync" disabled="@_loading">↻ Refresh</button>
+</div>
+
+@if (_loading && _stats is null)
+{
+    <LoadingSpinner Text="Loading dashboard..." />
+}
+else if (_error is not null)
+{
+    <div class="alert alert-error" role="alert">
+        @_error
+        <button type="button" class="btn btn-sm btn-outline" @onclick="LoadAsync">Try again</button>
+    </div>
+}
+else if (_stats is not null)
+{
+    <div class="stat-grid">
+        <div class="stat-card stat-primary"><span class="stat-label">Total events</span><strong class="stat-value">@_stats.TotalEvents</strong></div>
+        <div class="stat-card"><span class="stat-label">Total registrations</span><strong class="stat-value">@_stats.TotalRegistrations</strong></div>
+        <div class="stat-card stat-warning"><span class="stat-label">Upcoming events</span><strong class="stat-value">@_stats.UpcomingEvents</strong></div>
+        <div class="stat-card stat-success">
+            <span class="stat-label">Attendance rate</span>
+            <strong class="stat-value">@($"{_stats.Attendance.Rate:0.#}%")</strong>
+        </div>
+    </div>
+
+    <div class="dash-grid">
+        <section class="card panel">
+            <h2>Attendance statistics</h2>
+            @if (_stats.Attendance.Total == 0)
+            {
+                <p class="muted">No registrations yet.</p>
+            }
+            else
+            {
+                <div class="stack" role="img" aria-label="Attendance breakdown">
+                    <span class="seg seg-present" style="flex:@_stats.Attendance.Present"></span>
+                    <span class="seg seg-absent" style="flex:@_stats.Attendance.Absent"></span>
+                    <span class="seg seg-pending" style="flex:@_stats.Attendance.Pending"></span>
+                </div>
+            }
+            <ul class="legend">
+                <li><span class="dot seg-present"></span> Present <strong>@_stats.Attendance.Present</strong></li>
+                <li><span class="dot seg-absent"></span> Absent <strong>@_stats.Attendance.Absent</strong></li>
+                <li><span class="dot seg-pending"></span> Not marked <strong>@_stats.Attendance.Pending</strong></li>
+            </ul>
+            <a class="link" href="attendance">Open attendance tracker →</a>
+        </section>
+
+        <section class="card panel">
+            <h2>Upcoming events</h2>
+            @if (_stats.UpcomingList.Count == 0)
+            {
+                <p class="muted">No upcoming events.</p>
+            }
+            else
+            {
+                <ul class="upcoming-list">
+                    @foreach (var ev in _stats.UpcomingList)
+                    {
+                        <li>
+                            <div class="upcoming-row">
+                                <a href="events/@ev.Id"><strong>@ev.Name</strong></a>
+                                <span class="muted">@ev.EventDate.ToString("dd MMM")</span>
+                            </div>
+                            <div class="progress"><div class="progress-bar @(ev.IsFull ? "seats-full" : "seats-ok")" style="width:@(Percent(ev))%"></div></div>
+                            <small class="muted">@ev.RegisteredCount / @ev.MaxCapacity registered</small>
+                        </li>
+                    }
+                </ul>
+            }
+        </section>
+    </div>
+
+    <section class="card panel">
+        <h2>Recent registrations</h2>
+        @if (_stats.RecentRegistrations.Count == 0)
+        {
+            <p class="muted">Nobody has registered yet.</p>
+        }
+        else
+        {
+            <div class="table-wrap">
+                <table class="table">
+                    <thead>
+                        <tr><th>Name</th><th>Email</th><th>Event</th><th>Registered</th><th>Status</th></tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var reg in _stats.RecentRegistrations)
+                        {
+                            <tr>
+                                <td data-label="Name"><strong>@reg.FullName</strong></td>
+                                <td data-label="Email">@reg.Email</td>
+                                <td data-label="Event">@(reg.Event?.Name ?? "-")</td>
+                                <td data-label="Registered">@reg.RegistrationDate.ToString("dd MMM, hh:mm tt")</td>
+                                <td data-label="Status"><span class="badge @StatusBadge(reg.Attendance)">@reg.Attendance</span></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </section>
+}
+
+@code {
+    private DashboardStats? _stats;
+    private string? _error;
+    private bool _loading = true;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _error = null;
+        try
+        {
+            _stats = await DashboardService.GetStatsAsync();
+        }
+        catch (Exception)
+        {
+            _error = "We couldn't load the dashboard. Please try again.";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private static int Percent(Event ev) => ev.MaxCapacity <= 0 ? 0
+        : (int)Math.Round(ev.RegisteredCount * 100.0 / ev.MaxCapacity);
+
+    private static string StatusBadge(AttendanceStatus status) => status switch
+    {
+        AttendanceStatus.Present => "badge-success",
+        AttendanceStatus.Absent => "badge-danger",
+        _ => "badge-neutral"
+    };
+}

@@ -1,0 +1,100 @@
+@* Reusable form used by both the Create Event and Edit Event pages. *@
+<EditForm Model="Model" OnValidSubmit="HandleValidSubmit" class="card form-card">
+    <DataAnnotationsValidator />
+    <ValidationSummary />
+
+    @if (!string.IsNullOrWhiteSpace(ErrorMessage))
+    {
+        <div class="alert alert-error" role="alert">@ErrorMessage</div>
+    }
+
+    <div class="form-group">
+        <label for="ev-name">Event name</label>
+        <InputText id="ev-name" class="form-control" @bind-Value="Model.Name" placeholder="e.g. Blazor Workshop" />
+        <ValidationMessage For="() => Model.Name" />
+    </div>
+
+    <div class="form-group">
+        <label for="ev-desc">Description</label>
+        <InputTextArea id="ev-desc" class="form-control" rows="4" @bind-Value="Model.Description"
+                       placeholder="What will attendees learn or experience?" />
+        <ValidationMessage For="() => Model.Description" />
+    </div>
+
+    <div class="form-row">
+        <div class="form-group">
+            <label for="ev-date">Date</label>
+            <InputDate id="ev-date" class="form-control" @bind-Value="Model.EventDate" />
+            <ValidationMessage For="() => Model.EventDate" />
+        </div>
+        <div class="form-group">
+            <label for="ev-time">Start time</label>
+            <InputDate id="ev-time" TValue="TimeOnly" Type="InputDateType.Time" class="form-control" @bind-Value="Model.StartTime" />
+            <ValidationMessage For="() => Model.StartTime" />
+        </div>
+    </div>
+
+    <div class="form-row">
+        <div class="form-group">
+            <label for="ev-location">Location</label>
+            <InputText id="ev-location" class="form-control" @bind-Value="Model.Location" placeholder="Venue or address" />
+            <ValidationMessage For="() => Model.Location" />
+        </div>
+        <div class="form-group">
+            <label for="ev-category">Category</label>
+            <InputSelect id="ev-category" class="form-control" @bind-Value="Model.Category">
+                @foreach (var category in EventCatalog.Categories)
+                {
+                    <option value="@category">@category</option>
+                }
+            </InputSelect>
+            <ValidationMessage For="() => Model.Category" />
+        </div>
+    </div>
+
+    <div class="form-row">
+        <div class="form-group">
+            <label for="ev-capacity">Maximum capacity</label>
+            <InputNumber id="ev-capacity" class="form-control" @bind-Value="Model.MaxCapacity" />
+            <ValidationMessage For="() => Model.MaxCapacity" />
+            @if (Model.Id > 0)
+            {
+                <small class="hint">Currently @Model.RegisteredCount registered. Available seats are recalculated automatically.</small>
+            }
+        </div>
+        <div class="form-group">
+            <label for="ev-image">Event image</label>
+            <InputSelect id="ev-image" class="form-control" @bind-Value="Model.ImageUrl">
+                @foreach (var image in EventCatalog.Images)
+                {
+                    <option value="@image.Path">@image.Label</option>
+                }
+                @if (!EventCatalog.Images.Any(i => i.Path == Model.ImageUrl) && !string.IsNullOrWhiteSpace(Model.ImageUrl))
+                {
+                    <option value="@Model.ImageUrl">Custom image</option>
+                }
+            </InputSelect>
+            <ValidationMessage For="() => Model.ImageUrl" />
+        </div>
+    </div>
+
+    <img class="image-preview" src="@Model.ImageUrl" alt="Selected event image preview" />
+
+    <div class="form-actions">
+        <a class="btn btn-outline" href="@CancelHref">Cancel</a>
+        <button type="submit" class="btn btn-primary" disabled="@IsSaving">
+            @(IsSaving ? "Saving..." : SubmitText)
+        </button>
+    </div>
+</EditForm>
+
+@code {
+    [Parameter, EditorRequired] public Event Model { get; set; } = default!;
+    [Parameter] public EventCallback OnSubmit { get; set; }
+    [Parameter] public bool IsSaving { get; set; }
+    [Parameter] public string SubmitText { get; set; } = "Save";
+    [Parameter] public string? ErrorMessage { get; set; }
+    [Parameter] public string CancelHref { get; set; } = "events";
+
+    private Task HandleValidSubmit() => OnSubmit.InvokeAsync();
+}

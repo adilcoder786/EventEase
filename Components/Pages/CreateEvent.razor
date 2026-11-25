@@ -1,0 +1,41 @@
+@page "/create-event"
+@inject IEventService EventService
+@inject NavigationManager Navigation
+@inject NotificationService Notifications
+
+<PageTitle>Create Event - EventEase</PageTitle>
+
+<div class="page-header">
+    <div>
+        <h1>Create a New Event</h1>
+        <p class="muted">Fill in the details below. Registration opens immediately.</p>
+    </div>
+</div>
+
+<EventEditor Model="_model" OnSubmit="SaveAsync" IsSaving="_saving"
+             SubmitText="Create Event" ErrorMessage="_error" />
+
+@code {
+    private readonly Event _model = new();
+    private bool _saving;
+    private string? _error;
+
+    private async Task SaveAsync()
+    {
+        _saving = true;
+        _error = null;
+
+        var result = await EventService.CreateAsync(_model);
+        _saving = false;
+
+        if (result.Success && result.Data is not null)
+        {
+            Notifications.Success(result.Message);
+            Navigation.NavigateTo($"events/{result.Data.Id}");
+        }
+        else
+        {
+            _error = result.Message;
+        }
+    }
+}

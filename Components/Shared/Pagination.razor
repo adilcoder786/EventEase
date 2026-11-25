@@ -1,0 +1,35 @@
+@if (TotalPages > 1)
+{
+    <nav class="pagination" aria-label="Pagination">
+        <button type="button" class="page-btn" disabled="@(CurrentPage <= 1)"
+                @onclick="() => GoToAsync(CurrentPage - 1)">‹ Prev</button>
+
+        @for (var i = Start; i <= End; i++)
+        {
+            var number = i;
+            <button type="button" class="page-btn @(number == CurrentPage ? "active" : "")"
+                    aria-current="@(number == CurrentPage ? "page" : null)"
+                    @onclick="() => GoToAsync(number)">@(number)</button>
+        }
+
+        <button type="button" class="page-btn" disabled="@(CurrentPage >= TotalPages)"
+                @onclick="() => GoToAsync(CurrentPage + 1)">Next ›</button>
+    </nav>
+}
+
+@code {
+    [Parameter] public int CurrentPage { get; set; } = 1;
+    [Parameter] public int TotalPages { get; set; }
+    [Parameter] public EventCallback<int> OnPageChanged { get; set; }
+
+    // Show at most 5 page numbers around the current page.
+    private int Start => Math.Max(1, Math.Min(CurrentPage - 2, TotalPages - 4));
+    private int End => Math.Min(TotalPages, Start + 4);
+
+    private Task GoToAsync(int target)
+    {
+        if (target < 1 || target > TotalPages || target == CurrentPage)
+            return Task.CompletedTask;
+        return OnPageChanged.InvokeAsync(target);
+    }
+}

@@ -1,0 +1,71 @@
+@inherits LayoutComponentBase
+@implements IDisposable
+@inject UserSessionState Session
+@inject NavigationManager Navigation
+
+<div class="app-shell">
+    <NavMenu />
+
+    @if (Session.WasExpired)
+    {
+        <div class="session-banner" role="alert">
+            <span>⏱ Your session expired after @Session.Timeout.TotalMinutes.ToString("0") minutes of inactivity,
+                so your saved details were cleared for privacy.</span>
+            <button class="btn btn-sm btn-light" @onclick="Session.DismissExpiredNotice">Dismiss</button>
+        </div>
+    }
+
+    <main class="page-container">
+        @Body
+    </main>
+
+    <footer class="site-footer">
+        <div class="footer-inner">
+            <span>🎟️ <strong>EventEase</strong> - Event Management System</span>
+            <span class="muted">Built with ASP.NET Core, Blazor &amp; Entity Framework Core</span>
+        </div>
+    </footer>
+</div>
+
+<ToastContainer />
+
+<div id="blazor-error-ui">
+    An unexpected error has occurred.
+    <a href="" class="reload">Reload</a>
+    <a class="dismiss">🗙</a>
+</div>
+
+@code {
+    private System.Threading.Timer? _timer;
+
+    protected override void OnInitialized()
+    {
+        Session.OnChange += OnSessionChanged;
+        Navigation.LocationChanged += OnLocationChanged;
+
+        // Every 30 seconds check whether the session timed out.
+        _timer = new System.Threading.Timer(_ => CheckSession(), null,
+            TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
+    }
+
+    private void CheckSession()
+    {
+        _ = InvokeAsync(() =>
+        {
+            if (Session.ExpireIfNeeded())
+                StateHasChanged();
+        });
+    }
+
+    private void OnSessionChanged() => _ = InvokeAsync(StateHasChanged);
+
+    // Moving between pages counts as activity, so active users never expire.
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e) => Session.Touch();
+
+    public void Dispose()
+    {
+        Session.OnChange -= OnSessionChanged;
+        Navigation.LocationChanged -= OnLocationChanged;
+        _timer?.Dispose();
+    }
+}
